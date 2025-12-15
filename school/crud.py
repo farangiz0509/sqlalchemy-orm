@@ -1,118 +1,119 @@
 from datetime import datetime
-from sqlalchemy import or_, not_, and_
+from sqlalchemy import or_
 from .models import Student, Score
 from .db import get_db
 
-
+# CREATE
 def create_student(first_name: str, last_name: str, birthdate: datetime, bio: str | None = None):
-    student = Student(
-        first_name=first_name,
-        last_name=last_name,
-        birthdate=birthdate,
-        bio=bio
-    )
-    
     with get_db() as session:
+        student = Student(
+            first_name=first_name,
+            last_name=last_name,
+            birthdate=birthdate,
+            bio=bio
+        )
         session.add(student)
         session.commit()
+        session.refresh(student)
+        return student
 
-def get_students() -> list[Student]:
+# READ
+def get_students():
     with get_db() as session:
-        students = session.query(Student).all()
-    
-    return students
+        return session.query(Student).all()
 
-def get_one_student(student_id: int) -> Student | None:
+def get_one_student(student_id: int):
     with get_db() as session:
-        student = session.query(Student).get(student_id)
-    
-    return student
+        return session.get(Student, student_id)
 
-def search_students_by_first_name(first_name: str) -> list[Student]:
+def search_students_by_first_name(first_name: str):
     with get_db() as session:
-        students = session.query(Student).filter(Student.first_name==first_name).all()
-    
-    return students
+        return session.query(Student).filter(Student.first_name == first_name).all()
 
-def search_students_by_name(name: str) -> list[Student]:
+def search_students_by_name(name: str):
     with get_db() as session:
-        students = session.query(Student).filter(
-            or_(Student.first_name.like(f'%{name}%'), Student.last_name.like(f'%{name}%'))
+        return session.query(Student).filter(
+            or_(
+                Student.first_name.ilike(f"%{name}%"),
+                Student.last_name.ilike(f"%{name}%")
+            )
         ).all()
-    
-    return students
 
+# UPDATE
 def update_student(
-    student_id: int | None = None,
-    first_name: str | None = None, 
-    last_name: str | None = None, 
-    birthdate: datetime | None = None, 
+    student_id: int,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    birthdate: datetime | None = None,
     bio: str | None = None
 ):
-    student = get_one_student(student_id)
+    with get_db() as session:
+        student = session.get(Student, student_id)
+        if not student:
+            return None
+        if first_name:
+            student.first_name = first_name
+        if last_name:
+            student.last_name = last_name
+        if birthdate:
+            student.birthdate = birthdate
+        if bio:
+            student.bio = bio
+        session.commit()
+        session.refresh(student)
+        return student
 
-    if student:
-        with get_db() as session:
-            student.first_name = first_name if first_name else student.first_name
-            student.last_name = last_name if last_name else student.last_name
-            student.birthdate = birthdate if birthdate else student.birthdate
-            student.bio = bio if bio else student.bio
-
-            session.add(student)
-            session.commit()
-
+# DELETE
 def delete_student(student_id: int):
-    student = get_one_student(student_id)
-
-    if student:
-        with get_db() as session:
+    with get_db() as session:
+        student = session.get(Student, student_id)
+        if student:
             session.delete(student)
             session.commit()
+            return True
+        return False
 
-def filter_students_by_gender(gender: str) -> list[Student]:
+# FILTER
+def filter_students_by_gender(gender: str):
     with get_db() as session:
-        # result = session.query(Student).filter(Student.gender==gender).all()
-        result = session.query(Student).filter_by(gender=gender).all()
+        return session.query(Student).filter_by(gender=gender).all()
 
-    return result
-
-def filter_students_by_gpa(min_gpa: float, max_gpa: float) -> list[Student]:
+def filter_students_by_gpa(min_gpa: float, max_gpa: float):
     with get_db() as session:
-        # result = session.query(Student).filter(Student.gpa >= min_gpa, Student.gpa <= max_gpa).all()
-        result = session.query(Student).filter(Student.gpa.between(min_gpa, max_gpa)).all() # between
+        return session.query(Student).filter(Student.gpa.between(min_gpa, max_gpa)).all()
 
-    return result
-
-def get_sorted_students_by_gpa(by: str = 'asc') -> list[Student]:
+# SORT
+def get_sorted_students_by_gpa(by: str = "asc"):
     with get_db() as session:
-        if by == 'asc':
-            result = session.query(Student).order_by(Student.gpa.asc())
+        if by == "asc":
+            return session.query(Student).order_by(Student.gpa.asc()).all()
         else:
-            result = session.query(Student).order_by(Student.gpa.desc())
-            
-    return result
+            return session.query(Student).order_by(Student.gpa.desc()).all()
 
+# SCORE
 def add_score(student_id: int, subject: str, ball: float):
     with get_db() as session:
-        student: Student = session.query(Student).get(student_id)
-        student.scores.append(Score(subject=subject, ball=ball))
+        student = session.get(Student, student_id)
+        if not student:
+            return None
+        score = Score(subject=subject, ball=ball)
+        student.scores.append(score)
         session.commit()
+        return score
 
-def get_scores(student_id: int) -> list[Score]:
+def get_scores(student_id: int):
     with get_db() as session:
-        student: Student = session.query(Student).get(student_id)
-        return student.scores
-    
+        student = session.get(Student, student_id)
+        return student.scores if student else []
+
+# AGGREGATION
 def get_student_with_scores():
     with get_db() as session:
-        students: list[Student] = session.query(Student).all()
-
-        result = []
-        for student in students:
-            result.append({
-                'student': student.full_name,
-                'total_scores': len(student.scores)
-            })
-    
-    return result
-    
+        students = session.query(Student).all()
+        return [
+            {
+                "student": student.full_name,
+                "total_scores": len(student.scores)
+            }
+            for student in students
+        ]
